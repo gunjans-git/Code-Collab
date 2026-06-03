@@ -1,0 +1,61 @@
+# dependencies
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# env files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+client/.env
+server/.env
+
+# build outputs
+dist/
+build/
+client/dist/
+client/build/
+server/dist/
+server/build/
+
+# logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# editor files
+.vscode/
+.idea/
+
+# cache
+.cache/
+coverage/
+
+# temporary files
+*.tmp
+*.temp
+
+# Vite cache
+.vite/
+client/.vite/
+
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+client/.env
+server/.env
+
+# Build output
+dist/
+client/dist/

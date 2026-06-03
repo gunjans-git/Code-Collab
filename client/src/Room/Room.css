@@ -1,0 +1,91 @@
+.room-container {
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  flex-direction: column;
+  background: #1e1e1e;
+}
+
+.room-header {
+  height: 60px;
+  padding: 0 20px;
+  background: #2b2b2b;
+  border-bottom: 1px solid #3a3a3a;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.room-left {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.room-right {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.room-title {
+  color: white;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.room-id {
+  color: #aaa;
+  font-size: 0.9rem;
+}
+
+.language-select {
+  background: #1e1e1e;
+  color: white;
+  border: 1px solid #444;
+  padding: 8px 12px;
+  border-radius: 8px;
+  outline: none;
+  cursor: pointer;
+}
+
+.language-select:hover {
+  border-color: #61dafb;
+}
+
+.leave-btn {
+  background: #ef4444;
+  color: white;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: 0.2s;
+}
+
+.leave-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.editor-container {
+  flex: 1;
+  overflow: hidden;
+}
+
+.online-indicator {
+  color: #22c55e;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.online-dot {
+  width: 8px;
+  height: 8px;
+  background: #22c55e;
+  border-radius: 50%;
+}
