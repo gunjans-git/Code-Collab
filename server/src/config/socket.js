@@ -1,4 +1,6 @@
 const roomService = require("../services/roomService");
+const Room = require("../models/Room");
+
 
 function setupSocket(io) {
   io.on("connection", (socket) => {
@@ -15,6 +17,10 @@ function setupSocket(io) {
       socket.join(normalizedRoomId);
 
       const room = roomService.getRoom(normalizedRoomId);
+
+      socket.data.roomId = normalizedRoomId;
+      socket.data.userName = userName || "Anonymous";
+
       room.users.set(socket.id, {
         userName: socket.data.userName,
       });
@@ -31,7 +37,12 @@ function setupSocket(io) {
         users
       );
 
-      socket.emit("initial-code", room.code || "");
+      Room.findOne({ roomId: normalizedRoomId,}).then((dbRoom) => {
+        socket.emit(
+          "initial-code",
+          dbRoom?.code || ""
+        );
+      });
 
       socket.data.roomId = normalizedRoomId;
       socket.data.userName = userName || "Anonymous";
@@ -47,7 +58,7 @@ function setupSocket(io) {
       });
     });
 
-    socket.on("code-change", ({ roomId, code }) => {
+    socket.on("code-change", async ({ roomId, code }) => {
       const normalizedRoomId = roomId?.trim().toUpperCase();
 
       if (!normalizedRoomId) return;
@@ -57,6 +68,10 @@ function setupSocket(io) {
 
       if (room) {
         room.code = code;
+        await Room.findOneAndUpdate(
+          { roomId: normalizedRoomId },
+          { code }
+        );
       }
 
       socket.to(normalizedRoomId).emit("code-update", {

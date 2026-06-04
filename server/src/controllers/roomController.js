@@ -1,7 +1,12 @@
+const Room = require("../models/Room");
 const roomService = require("../services/roomService");
 
-const createRoom = (req, res) => {
+const createRoom = async (req, res) => {
   const roomId = roomService.createRoom();
+
+  await Room.create({
+    roomId,
+  });
 
   res.status(201).json({
     success: true,
@@ -10,7 +15,7 @@ const createRoom = (req, res) => {
   });
 };
 
-const joinRoom = (req, res) => {
+const joinRoom = async (req, res) => {
   const { roomId } = req.body;
 
   if (!roomId) {
@@ -20,9 +25,14 @@ const joinRoom = (req, res) => {
     });
   }
 
-  const normalizedRoomId = roomId.trim().toUpperCase();
+  const normalizedRoomId =
+    roomId.trim().toUpperCase();
 
-  if (!roomService.roomExists(normalizedRoomId)) {
+  const room = await Room.findOne({
+    roomId: normalizedRoomId,
+  });
+
+  if (!room) {
     return res.status(404).json({
       success: false,
       message: "Room not found",

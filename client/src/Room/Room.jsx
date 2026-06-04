@@ -81,6 +81,14 @@ const cursorColors = [
       console.log("ROOM ERROR:", data);
     });
 
+    socket.on("initial-code", (code) => {
+      if (!editorRef.current) return;
+
+      isRemoteUpdateRef.current = true;
+
+      editorRef.current.setValue(code);
+    });
+
     socket.on("cursor-update",
       ({ cursor, userName, senderId }) => {
         if (!editorRef.current || !monacoRef.current || senderId === socketRef.current?.id)
