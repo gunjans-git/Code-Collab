@@ -212,7 +212,17 @@ const cursorColors = [
           <h2 className="room-title">CodeCollab</h2>
 
           <span className="room-id">
-            Room: {roomId}
+            Room: 
+            <button
+                  className="room-id-btn "
+                  onClick={() =>
+                    navigator.clipboard.writeText(
+                      roomId
+                    )
+                  }
+                >
+                  {roomId}
+                </button>
           </span>
 
           <select
@@ -299,17 +309,10 @@ const cursorColors = [
               </div>
 
               <div className="dropdown-actions">
-                <button
-                  onClick={() =>
-                    navigator.clipboard.writeText(
-                      roomId
-                    )
-                  }
-                >
-                  Copy Room Code
-                </button>
+                {/*  */}
 
                 <button
+                  className="leave-btn"
                   onClick={() =>
                     navigate("/")
                   }
@@ -332,7 +335,7 @@ const cursorColors = [
           }
           options={{
             minimap: {
-              enabled: false,
+              enabled: true,
             },
             fontSize: 16,
             automaticLayout: true,
