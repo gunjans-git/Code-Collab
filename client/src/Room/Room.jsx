@@ -17,35 +17,39 @@ function Room() {
   );
 
   useEffect(() => {
-    const socket = io("http://localhost:5000");
+    const socket = io("http://localhost:3000");
     socketRef.current = socket;
 
-    socket.emit("join-room", roomId);
+    socket.emit("join-room", {
+      roomId,
+      userName: localStorage.getItem("username") || "Anonymous",
+    });
 
-    socket.on("current-code", (code) => {
-      if (editorRef.current) {
+    socket.on("code-update", ({ code }) => {
+      if (!editorRef.current) return;
+
+      const currentCode = editorRef.current.getValue();
+
+      if (currentCode !== code) {
         isRemoteUpdateRef.current = true;
-        editorRef.current.setValue(code || "");
+        editorRef.current.setValue(code);
       }
     });
 
-    socket.on("code-change", (code) => {
-      if (editorRef.current) {
-        const current = editorRef.current.getValue();
-        if (current !== code) {
-          isRemoteUpdateRef.current = true;
-          editorRef.current.setValue(code);
-        }
-      }
+    socket.on("room-error", (data) => {
+      console.log("ROOM ERROR:", data);
     });
 
     return () => {
       socket.disconnect();
     };
+
+
   }, [roomId]);
 
   const handleEditorDidMount = (editor) => {
     editorRef.current = editor;
+
 
     editor.onDidChangeModelContent(() => {
       if (isRemoteUpdateRef.current) {
@@ -54,57 +58,56 @@ function Room() {
       }
 
       const code = editor.getValue();
-      socketRef.current?.emit("code-change", { roomId, code });
+
+      socketRef.current?.emit("code-change", {
+        roomId,
+        code,
+      });
     });
   };
 
   const handleLanguageChange = (e) => {
-    const newLang = e.target.value;
-    setLanguage(newLang);
-    localStorage.setItem("editor-language", newLang);
+    const selectedLanguage = e.target.value;
+    setLanguage(selectedLanguage);
+    localStorage.setItem("editor-language", selectedLanguage);
   };
 
-  return (
-    <div className="room-container">
-      <header className="room-header">
-        <div className="room-left">
-          <span className="room-title">🚀 CodeCollab</span>
-          <span className="room-id">Room: {roomId}</span>
+  return (<div className="room-container"> <header className="room-header"> <div className="room-left"> <h2>Code Collab</h2> <span>Room: {roomId}</span>
+    <select
+      value={language}
+      onChange={handleLanguageChange}
+      className="language-select"
+    >
+      <option value="javascript">JavaScript</option>
+      <option value="python">Python</option>
+      <option value="cpp">C++</option>
+      <option value="java">Java</option>
+    </select>
+  </div>
 
-          <select
-            className="language-select"
-            value={language}
-            onChange={handleLanguageChange}
-          >
-            <option value="javascript">JavaScript</option>
-            <option value="python">Python</option>
-            <option value="cpp">C++</option>
-            <option value="java">Java</option>
-          </select>
-        </div>
+    <button
+      className="leave-btn"
+      onClick={() => navigate("/")}
+    >
+      Leave Room
+    </button>
+  </header>
 
-        <div className="room-right">
-          <button className="leave-btn" onClick={() => navigate("/")}>
-            Leave
-          </button>
-        </div>
-      </header>
-
-      <div className="editor-container">
-        <Editor
-          height="100%"
-          width="100%"
-          language={language}
-          theme="vs-dark"
-          onMount={handleEditorDidMount}
-          options={{
-            fontSize: 16,
-            minimap: { enabled: false },
-            automaticLayout: true,
-          }}
-        />
-      </div>
+    <div className="editor-container">
+      <Editor
+        height="90vh"
+        defaultLanguage={language}
+        language={language}
+        theme="vs-dark"
+        onMount={handleEditorDidMount}
+        options={{
+          minimap: { enabled: false },
+          fontSize: 16,
+          automaticLayout: true,
+        }}
+      />
     </div>
+  </div>
   );
 }
 

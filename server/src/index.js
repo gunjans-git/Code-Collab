@@ -1,50 +1,24 @@
-const express = require("express");
+require("dotenv").config();
+
 const http = require("http");
-const cors = require("cors");
+const app = require("./app");
+const setupSocket = require("./config/socket");
 const { Server } = require("socket.io");
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+const PORT = process.env.PORT || 3000;
+const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
 
 const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-  origin: ["http://localhost:5173", "http://localhost:5174"], 
-  methods: ["GET", "POST"],
-    }
+    origin: CLIENT_URL,
+    methods: ["GET", "POST"],
+  },
 });
 
-const rooms = {};
+setupSocket(io);
 
-app.get("/", (req, res) => {
-  res.send("Backend is running");
-});
-
-io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
-
-  socket.on("join-room", (roomId) => {
-    socket.join(roomId);
-
-    if (!rooms[roomId]) {
-      rooms[roomId] = "";
-    }
-
-    socket.emit("current-code", rooms[roomId]);
-  });
-
-  socket.on("code-change", ({ roomId, code }) => {
-    rooms[roomId] = code;
-    socket.to(roomId).emit("code-change", code);
-  });
-
-  socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.id);
-  });
-});
-
-server.listen(5000, () => {
-  console.log("Server running on port 5000");
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
