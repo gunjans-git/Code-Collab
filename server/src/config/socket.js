@@ -15,7 +15,23 @@ function setupSocket(io) {
       socket.join(normalizedRoomId);
 
       const room = roomService.getRoom(normalizedRoomId);
-      room.users.add(socket.id);
+      room.users.set(socket.id, {
+        userName: socket.data.userName,
+      });
+
+      const users = [...room.users.entries()].map(
+        ([socketId, user]) => ({
+          socketId,
+          userName: user.userName,
+        })
+      );
+
+      io.to(normalizedRoomId).emit(
+        "users-updated",
+        users
+      );
+
+      socket.emit("initial-code", room.code || "");
 
       socket.data.roomId = normalizedRoomId;
       socket.data.userName = userName || "Anonymous";
@@ -33,7 +49,15 @@ function setupSocket(io) {
 
     socket.on("code-change", ({ roomId, code }) => {
       const normalizedRoomId = roomId?.trim().toUpperCase();
+
       if (!normalizedRoomId) return;
+
+      const room =
+        roomService.getRoom(normalizedRoomId);
+
+      if (room) {
+        room.code = code;
+      }
 
       socket.to(normalizedRoomId).emit("code-update", {
         code,
@@ -45,9 +69,11 @@ function setupSocket(io) {
       const normalizedRoomId = roomId?.trim().toUpperCase();
       if (!normalizedRoomId) return;
 
-      socket.to(normalizedRoomId).emit("cursor-update", {
+      socket.to(normalizedRoomId).emit("cursor-update", 
+        {
         cursor,
         senderId: socket.id,
+        userName: socket.data.userName,
       });
     });
 
@@ -56,7 +82,20 @@ function setupSocket(io) {
 
       if (roomId && roomService.roomExists(roomId)) {
         const room = roomService.getRoom(roomId);
+
         room.users.delete(socket.id);
+
+        const users = [...room.users.entries()].map(
+          ([socketId, user]) => ({
+            socketId,
+            userName: user.userName,
+          })
+        );
+
+        io.to(roomId).emit(
+          "users-updated",
+          users
+        );
 
         socket.to(roomId).emit("user-left", {
           socketId: socket.id,

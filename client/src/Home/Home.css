@@ -1,62 +1,108 @@
-.home-container {
+.home-page {
   min-height: 100vh;
-  width: 100vw;
-  background: #1e1e1e;
+  background: #f5f3ee;
   display: flex;
   justify-content: center;
   align-items: center;
+  overflow: hidden;
+  position: relative;
 }
 
-.home-card {
-  width: min(500px, 90vw);
-  background: #2b2b2b;
-  padding: 32px;
-  border-radius: 16px;
+.background-glow {
+  position: absolute;
+  width: 600px;
+  height: 600px;
+
+  background: radial-gradient(
+    circle,
+    rgba(214, 169, 59, 0.25) 0%,
+    transparent 70%
+  );
+
+  top: 50%;
+  left: 50%;
+
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.left-branch {
+  position: absolute;
+  left: -40px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 18rem;
+  opacity: 0.15;
+  user-select: none;
+  pointer-events: none;
+}
+
+.hanging-leaves {
+  position: absolute;
+  top: 0;
+  right: 80px;
+
   display: flex;
-  flex-direction: column;
-  gap: 16px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
-  color: white;
+  gap: 2rem;
 }
 
-.home-title {
-  margin: 0;
-  font-size: 2rem;
+.hanging-leaves span {
+  font-size: 3rem;
+  opacity: 0.35;
+  animation: sway 4s ease-in-out infinite;
 }
 
-.home-subtitle {
-  margin: 0;
-  color: #aaa;
-  line-height: 1.5;
+.hanging-leaves span:nth-child(2) {
+  animation-delay: 1s;
 }
 
-.room-input {
-  padding: 12px 14px;
-  border-radius: 10px;
-  border: 1px solid #444;
-  background: #1e1e1e;
-  color: white;
-  outline: none;
-  font-size: 1rem;
+.hanging-leaves span:nth-child(3) {
+  animation-delay: 2s;
 }
 
-.room-input:focus {
-  border-color: #61dafb;
+@keyframes sway {
+  0% {
+    transform: rotate(-4deg);
+  }
+
+  50% {
+    transform: rotate(4deg);
+  }
+
+  100% {
+    transform: rotate(-4deg);
+  }
 }
 
-.join-btn {
-  padding: 12px 14px;
-  border-radius: 10px;
-  border: none;
-  background: #4f46e5;
-  color: white;
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 1rem;
-  transition: transform 0.15s ease, opacity 0.15s ease;
+@media (max-width: 768px) {
+  .left-branch {
+    font-size: 10rem;
+  }
+
+  .hanging-leaves {
+    right: 20px;
+  }
+
+  .hanging-leaves span {
+    font-size: 2rem;
+  }
 }
 
-.join-btn:hover {
-  transform: translateY(-1px);
-  opacity: 0.95;
+.hanging-leaves {
+  animation: sway 5s ease-in-out infinite;
+  transform-origin: top center;
+}
+
+@keyframes sway {
+  0% {
+    transform: rotate(-2deg);
+  }
+
+  50% {
+    transform: rotate(2deg);
+  }
+
+  100% {
+    transform: rotate(-2deg);
+  }
 }

@@ -14,7 +14,13 @@ function createRoom() {
 
   rooms.set(roomId, {
     createdAt: new Date().toISOString(),
-    users: new Set(),
+
+    // Store users with username info
+    users: new Map(),
+
+    // Store latest room code
+    code: "",
+    
   });
 
   return roomId;
