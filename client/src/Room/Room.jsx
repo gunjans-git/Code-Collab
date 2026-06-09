@@ -3,6 +3,14 @@ import { useNavigate, useParams } from "react-router-dom";
 import Editor from "@monaco-editor/react";
 import { io } from "socket.io-client";
 import "./Room.css";
+import logo from "../assets/logo.png";
+
+const EMPTY_CODES = {
+  javascript: "",
+  python: "",
+  cpp: "",
+  java: "",
+};
 
 function Room() {
   const { roomId } = useParams();
@@ -15,26 +23,29 @@ function Room() {
   const monacoRef = useRef(null);
   const decorationsRef = useRef({});
   const isRemoteUpdateRef = useRef(false);
+  const languageRef = useRef("javascript");
+  const codesRef = useRef({ ...EMPTY_CODES });
+  const pendingRoomCodeRef = useRef(null);
 
-  const username =
-    localStorage.getItem("username") || "Anonymous";
+  const username = localStorage.getItem("username") || "Anonymous";
 
   const [users, setUsers] = useState([]);
   const [showUsers, setShowUsers] = useState(false);
+  const [language, setLanguage] = useState("javascript");
+  const [pendingLanguage, setPendingLanguage] = useState(null);
 
-  const [language, setLanguage] = useState(
-    localStorage.getItem("editor-language") ||
-    "javascript"
-  );
+  const cursorColors = [
+    "#ef4444",
+    "#3b82f6",
+    "#22c55e",
+    "#f59e0b",
+    "#a855f7",
+    "#ec4899",
+  ];
 
-const cursorColors = [
-  "#ef4444", // red
-  "#3b82f6", // blue
-  "#22c55e", // green
-  "#f59e0b", // amber
-  "#a855f7", // purple
-  "#ec4899", // pink
-];
+  useEffect(() => {
+    languageRef.current = language;
+  }, [language]);
 
   useEffect(() => {
     const socket = io("http://localhost:3000");
@@ -46,11 +57,34 @@ const cursorColors = [
       userName: username,
     });
 
-    socket.on("code-update", ({ code }) => {
+    socket.on("room-state", ({ activeLanguage, code, codes }) => {
+      if (codes) {
+        codesRef.current = { ...EMPTY_CODES, ...codes };
+      }
+
+      setPendingLanguage(null);
+      setLanguage(activeLanguage);
+      languageRef.current = activeLanguage;
+
+      if (!editorRef.current) {
+        pendingRoomCodeRef.current = code ?? "";
+        return;
+      }
+
+      isRemoteUpdateRef.current = true;
+      editorRef.current.setValue(code ?? "");
+    });
+
+    socket.on("code-update", ({ code, language: updateLang }) => {
       if (!editorRef.current) return;
 
-      const currentCode =
-        editorRef.current.getValue();
+      codesRef.current[updateLang] = code;
+
+      if (updateLang !== languageRef.current) {
+        return;
+      }
+
+      const currentCode = editorRef.current.getValue();
 
       if (currentCode !== code) {
         isRemoteUpdateRef.current = true;
@@ -63,80 +97,85 @@ const cursorColors = [
     });
 
     socket.on("user-left", (socketId) => {
-      if (
-        decorationsRef.current[socketId]
-      ) {
+      if (decorationsRef.current[socketId]) {
         editorRef.current.deltaDecorations(
           decorationsRef.current[socketId],
           []
         );
 
-        delete decorationsRef.current[
-          socketId
-        ];
+        delete decorationsRef.current[socketId];
       }
     });
 
     socket.on("room-error", (data) => {
       console.log("ROOM ERROR:", data);
+      setPendingLanguage(null);
     });
 
-    socket.on("initial-code", (code) => {
+    socket.on("language-update", ({ language: nextLanguage, code }) => {
+      codesRef.current[nextLanguage] = code ?? "";
+
+      setPendingLanguage(null);
+      setLanguage(nextLanguage);
+      languageRef.current = nextLanguage;
+
       if (!editorRef.current) return;
 
       isRemoteUpdateRef.current = true;
-
-      editorRef.current.setValue(code);
+      editorRef.current.setValue(code ?? "");
     });
 
-    socket.on("cursor-update",
-      ({ cursor, userName, senderId }) => {
-        if (!editorRef.current || !monacoRef.current || senderId === socketRef.current?.id)
-          return;
+    socket.on("cursor-update", ({ cursor, userName, senderId }) => {
+      if (
+        !editorRef.current ||
+        !monacoRef.current ||
+        senderId === socketRef.current?.id
+      ) {
+        return;
+      }
 
-        const color = cursorColors[ senderId.length % cursorColors.length];
+      const color =
+        cursorColors[senderId.length % cursorColors.length];
 
-        const styleId = `cursor-style-${senderId}`;
+      const styleId = `cursor-style-${senderId}`;
 
-        if (!document.getElementById(styleId)) {
-          const style =
-            document.createElement("style");
+      if (!document.getElementById(styleId)) {
+        const style = document.createElement("style");
 
-          style.id = styleId;
+        style.id = styleId;
 
-          style.innerHTML = `
+        style.innerHTML = `
             .remote-cursor-${senderId} {
               border-left: 3px solid ${color};
             }
           `;
 
-          document.head.appendChild(style);
-        }
-
-        const decoration = {
-          range: new monacoRef.current.Range(
-            cursor.lineNumber,
-            cursor.column,
-            cursor.lineNumber,
-            cursor.column
-          ),
-
-          options: {
-            className: "remote-cursor",
-            afterContentClassName: "remote-cursor-label",
-            hoverMessage: {
-              value: userName,
-            },
-          },
-        };
-
-        decorationsRef.current[senderId] =
-          editorRef.current.deltaDecorations(
-            decorationsRef.current[senderId] || [],
-            [decoration]
-          );
+        document.head.appendChild(style);
       }
-    );
+
+      const decoration = {
+        range: new monacoRef.current.Range(
+          cursor.lineNumber,
+          cursor.column,
+          cursor.lineNumber,
+          cursor.column
+        ),
+
+        options: {
+          className: "remote-cursor",
+          afterContentClassName: "remote-cursor-label",
+          hoverMessage: {
+            value: userName,
+          },
+        },
+      };
+
+      decorationsRef.current[senderId] =
+        editorRef.current.deltaDecorations(
+          decorationsRef.current[senderId] || [],
+          [decoration]
+        );
+    });
 
     return () => {
       socket.disconnect();
@@ -147,34 +186,29 @@ const cursorColors = [
     const handleClickOutside = (event) => {
       if (
         dropdownRef.current &&
-        !dropdownRef.current.contains(
-          event.target
-        )
+        !dropdownRef.current.contains(event.target)
       ) {
         setShowUsers(false);
       }
     };
 
-    document.addEventListener(
-      "mousedown",
-      handleClickOutside
-    );
+    document.addEventListener("mousedown", handleClickOutside);
 
     return () => {
-      document.removeEventListener(
-        "mousedown",
-        handleClickOutside
-      );
+      document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
-
-
 
   const handleEditorDidMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
 
-    // Send cursor position
+    if (pendingRoomCodeRef.current !== null) {
+      isRemoteUpdateRef.current = true;
+      editor.setValue(pendingRoomCodeRef.current);
+      pendingRoomCodeRef.current = null;
+    }
+
     editor.onDidChangeCursorPosition((e) => {
       socketRef.current?.emit("cursor-move", {
         roomId,
@@ -185,7 +219,6 @@ const cursorColors = [
       });
     });
 
-    // Send code changes
     editor.onDidChangeModelContent(() => {
       if (isRemoteUpdateRef.current) {
         isRemoteUpdateRef.current = false;
@@ -193,96 +226,80 @@ const cursorColors = [
       }
 
       const code = editor.getValue();
+      const activeLanguage = languageRef.current;
+
+      codesRef.current[activeLanguage] = code;
 
       socketRef.current?.emit("code-change", {
         roomId,
         code,
+        language: activeLanguage,
       });
     });
   };
 
   const handleLanguageChange = (e) => {
-    const selectedLanguage =
-      e.target.value;
+    const newLang = e.target.value;
 
-    setLanguage(selectedLanguage);
+    if (newLang === languageRef.current) return;
 
-    localStorage.setItem(
-      "editor-language",
-      selectedLanguage
-    );
+    setPendingLanguage(newLang);
+
+    const currentCode = editorRef.current?.getValue() ?? "";
+
+    socketRef.current?.emit("language-change", {
+      roomId,
+      previousLanguage: languageRef.current,
+      language: newLang,
+      code: currentCode,
+    });
   };
 
   return (
     <div className="room-container">
       <header className="room-header">
         <div className="room-left">
-          <h2 className="room-title">CodeCollab</h2>
+          <h2 className="room-title">
+            <img src={logo} alt="CodeCollab" className="w-14 h-14" />
+          </h2>
 
           <span className="room-id">
-            Room: 
+            Room:
             <button
-                  className="room-id-btn "
-                  onClick={() =>
-                    navigator.clipboard.writeText(
-                      roomId
-                    )
-                  }
-                >
-                  {roomId}
-                </button>
+              className="room-id-btn "
+              onClick={() => navigator.clipboard.writeText(roomId)}
+            >
+              {roomId}
+            </button>
           </span>
 
           <select
-            value={language}
+            value={pendingLanguage ?? language}
             onChange={handleLanguageChange}
             className="language-select"
           >
-            <option value="javascript">
-              JavaScript
-            </option>
-
-            <option value="python">
-              Python
-            </option>
-
-            <option value="cpp">
-              C++
-            </option>
-
-            <option value="java">
-              Java
-            </option>
+            <option value="javascript">JavaScript</option>
+            <option value="python">Python</option>
+            <option value="cpp">C++</option>
+            <option value="java">Java</option>
           </select>
         </div>
 
-        <div
-          ref={dropdownRef}
-          className="user-dropdown-wrapper"
-        >
+        <div ref={dropdownRef} className="user-dropdown-wrapper">
           <button
             className="user-profile-btn"
-            onClick={() =>
-              setShowUsers(!showUsers)
-            }
+            onClick={() => setShowUsers(!showUsers)}
           >
             <div className="avatar-circle">
               {username.charAt(0).toUpperCase()}
             </div>
 
             <div className="user-info">
-              <span className="user-name">
-                {username}
-              </span>
-
-              <span className="user-status">
-                Online
-              </span>
+              <span className="user-name">{username}</span>
+              <span className="user-status">Online</span>
             </div>
 
-            <span className="dropdown-arrow">
-              ▼
-            </span>
+            <span className="dropdown-arrow">▼</span>
           </button>
 
           {showUsers && (
@@ -293,10 +310,7 @@ const cursorColors = [
 
               <div className="participants-list">
                 {users.map((user) => (
-                  <div
-                    key={user.socketId}
-                    className="participant-card"
-                  >
+                  <div key={user.socketId} className="participant-card">
                     <div className="participant-avatar">
                       {user.userName?.charAt(0)?.toUpperCase()}
                     </div>
@@ -304,27 +318,17 @@ const cursorColors = [
                     <div className="participant-details">
                       <div className="participant-name">
                         {user.userName}
-                        {user.userName === username &&
-                          " (You)"}
+                        {user.userName === username && " (You)"}
                       </div>
 
-                      <div className="participant-online">
-                        ● Online
-                      </div>
+                      <div className="participant-online">● Online</div>
                     </div>
                   </div>
                 ))}
               </div>
 
               <div className="dropdown-actions">
-                {/*  */}
-
-                <button
-                  className="leave-btn"
-                  onClick={() =>
-                    navigate("/")
-                  }
-                >
+                <button className="leave-btn" onClick={() => navigate("/")}>
                   Leave Room
                 </button>
               </div>
@@ -338,9 +342,7 @@ const cursorColors = [
           height="90vh"
           language={language}
           theme="vs-dark"
-          onMount={
-            handleEditorDidMount
-          }
+          onMount={handleEditorDidMount}
           options={{
             minimap: {
               enabled: true,

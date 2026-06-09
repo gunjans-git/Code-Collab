@@ -6,6 +6,13 @@ const createRoom = async (req, res) => {
 
   await Room.create({
     roomId,
+    activeLanguage: "javascript",
+    codes: {
+      javascript: "",
+      python: "",
+      cpp: "",
+      java: "",
+    },
   });
 
   res.status(201).json({

@@ -1,22 +1,31 @@
 const roomService = require("../services/roomService");
 const Room = require("../models/Room");
 
-
 function setupSocket(io) {
   io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
 
-    socket.on("join-room", ({ roomId, userName }) => {
+    socket.on("join-room", async ({ roomId, userName }) => {
       const normalizedRoomId = roomId?.trim().toUpperCase();
 
-      if (!normalizedRoomId || !roomService.roomExists(normalizedRoomId)) {
-        socket.emit("room-error", { message: "Room does not exist" });
+      if (!normalizedRoomId) {
+        socket.emit("room-error", { message: "Invalid room code" });
         return;
       }
 
-      socket.join(normalizedRoomId);
+      let room = roomService.getRoom(normalizedRoomId);
+      const dbRoom = await Room.findOne({ roomId: normalizedRoomId });
 
-      const room = roomService.getRoom(normalizedRoomId);
+      if (!room) {
+        if (!dbRoom) {
+          socket.emit("room-error", { message: "Room does not exist" });
+          return;
+        }
+
+        room = roomService.restoreRoom(normalizedRoomId, dbRoom);
+      }
+
+      socket.join(normalizedRoomId);
 
       socket.data.roomId = normalizedRoomId;
       socket.data.userName = userName || "Anonymous";
@@ -32,20 +41,13 @@ function setupSocket(io) {
         })
       );
 
-      io.to(normalizedRoomId).emit(
-        "users-updated",
-        users
-      );
+      io.to(normalizedRoomId).emit("users-updated", users);
 
-      Room.findOne({ roomId: normalizedRoomId,}).then((dbRoom) => {
-        socket.emit(
-          "initial-code",
-          dbRoom?.code || ""
-        );
+      socket.emit("room-state", {
+        activeLanguage: room.activeLanguage,
+        code: room.codes[room.activeLanguage] ?? "",
+        codes: room.codes,
       });
-
-      socket.data.roomId = normalizedRoomId;
-      socket.data.userName = userName || "Anonymous";
 
       socket.to(normalizedRoomId).emit("user-joined", {
         socketId: socket.id,
@@ -58,34 +60,77 @@ function setupSocket(io) {
       });
     });
 
-    socket.on("code-change", async ({ roomId, code }) => {
+    socket.on("code-change", async ({ roomId, code, language }) => {
       const normalizedRoomId = roomId?.trim().toUpperCase();
 
       if (!normalizedRoomId) return;
 
-      const room =
-        roomService.getRoom(normalizedRoomId);
+      const room = roomService.getRoom(normalizedRoomId);
 
-      if (room) {
-        room.code = code;
-        await Room.findOneAndUpdate(
-          { roomId: normalizedRoomId },
-          { code }
-        );
-      }
+      if (!room) return;
+
+      const lang = roomService.normalizeLanguage(
+        language || room.activeLanguage
+      );
+
+      room.codes[lang] = code;
+
+      await Room.findOneAndUpdate(
+        { roomId: normalizedRoomId },
+        { [`codes.${lang}`]: code }
+      );
 
       socket.to(normalizedRoomId).emit("code-update", {
         code,
+        language: lang,
         senderId: socket.id,
       });
     });
+
+    socket.on(
+      "language-change",
+      async ({ roomId, previousLanguage, language, code }) => {
+        const normalizedRoomId = roomId?.trim().toUpperCase();
+
+        if (!normalizedRoomId) return;
+
+        const room = roomService.getRoom(normalizedRoomId);
+
+        if (!room) return;
+
+        const prevLang = roomService.normalizeLanguage(
+          previousLanguage || room.activeLanguage
+        );
+        const nextLang = roomService.normalizeLanguage(language);
+
+        if (code !== undefined) {
+          room.codes[prevLang] = code;
+        }
+
+        room.activeLanguage = nextLang;
+
+        const nextCode = room.codes[nextLang] ?? "";
+
+        await Room.findOneAndUpdate(
+          { roomId: normalizedRoomId },
+          {
+            activeLanguage: nextLang,
+            [`codes.${prevLang}`]: room.codes[prevLang],
+          }
+        );
+
+        io.to(normalizedRoomId).emit("language-update", {
+          language: nextLang,
+          code: nextCode,
+        });
+      }
+    );
 
     socket.on("cursor-move", ({ roomId, cursor }) => {
       const normalizedRoomId = roomId?.trim().toUpperCase();
       if (!normalizedRoomId) return;
 
-      socket.to(normalizedRoomId).emit("cursor-update", 
-        {
+      socket.to(normalizedRoomId).emit("cursor-update", {
         cursor,
         senderId: socket.id,
         userName: socket.data.userName,
@@ -107,10 +152,7 @@ function setupSocket(io) {
           })
         );
 
-        io.to(roomId).emit(
-          "users-updated",
-          users
-        );
+        io.to(roomId).emit("users-updated", users);
 
         socket.to(roomId).emit("user-left", {
           socketId: socket.id,
