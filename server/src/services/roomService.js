@@ -49,15 +49,21 @@ function createUniqueRoomId() {
   return roomId;
 }
 
-function createRoom() {
-  const roomId = createUniqueRoomId();
-
+function registerRoom(roomId, roomData = {}) {
   rooms.set(roomId, {
     createdAt: new Date().toISOString(),
     users: new Map(),
-    activeLanguage: "javascript",
-    codes: createEmptyCodes(),
+    activeLanguage: roomData.activeLanguage || "javascript",
+    codes: roomData.codes || createEmptyCodes(),
   });
+
+  return rooms.get(roomId);
+}
+
+function createRoom() {
+  const roomId = createUniqueRoomId();
+
+  registerRoom(roomId);
 
   return roomId;
 }
@@ -95,6 +101,8 @@ module.exports = {
   createEmptyCodes,
   codesFromDb,
   normalizeLanguage,
+  createUniqueRoomId,
+  registerRoom,
   createRoom,
   restoreRoom,
   roomExists,

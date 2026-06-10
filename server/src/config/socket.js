@@ -1,6 +1,30 @@
 const roomService = require("../services/roomService");
 const Room = require("../models/Room");
 
+const USER_COLOR_COUNT = 8;
+
+function getNextUserColorIndex(users) {
+  const usedColors = new Set(
+    [...users.values()].map((user) => user.colorIndex)
+  );
+
+  for (let index = 0; index < USER_COLOR_COUNT; index++) {
+    if (!usedColors.has(index)) {
+      return index;
+    }
+  }
+
+  return users.size % USER_COLOR_COUNT;
+}
+
+function getUsersPayload(users) {
+  return [...users.entries()].map(([socketId, user]) => ({
+    socketId,
+    userName: user.userName,
+    colorIndex: user.colorIndex,
+  }));
+}
+
 function setupSocket(io) {
   io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
@@ -29,17 +53,14 @@ function setupSocket(io) {
 
       socket.data.roomId = normalizedRoomId;
       socket.data.userName = userName || "Anonymous";
+      socket.data.colorIndex = getNextUserColorIndex(room.users);
 
       room.users.set(socket.id, {
         userName: socket.data.userName,
+        colorIndex: socket.data.colorIndex,
       });
 
-      const users = [...room.users.entries()].map(
-        ([socketId, user]) => ({
-          socketId,
-          userName: user.userName,
-        })
-      );
+      const users = getUsersPayload(room.users);
 
       io.to(normalizedRoomId).emit("users-updated", users);
 
@@ -52,6 +73,7 @@ function setupSocket(io) {
       socket.to(normalizedRoomId).emit("user-joined", {
         socketId: socket.id,
         userName: socket.data.userName,
+        colorIndex: socket.data.colorIndex,
         message: `${socket.data.userName} joined the room`,
       });
 
@@ -134,6 +156,7 @@ function setupSocket(io) {
         cursor,
         senderId: socket.id,
         userName: socket.data.userName,
+        colorIndex: socket.data.colorIndex,
       });
     });
 
@@ -145,12 +168,7 @@ function setupSocket(io) {
 
         room.users.delete(socket.id);
 
-        const users = [...room.users.entries()].map(
-          ([socketId, user]) => ({
-            socketId,
-            userName: user.userName,
-          })
-        );
+        const users = getUsersPayload(room.users);
 
         io.to(roomId).emit("users-updated", users);
 

@@ -12,6 +12,8 @@ const EMPTY_CODES = {
   java: "",
 };
 
+const CURSOR_COLOR_COUNT = 8;
+
 function Room() {
   const { roomId } = useParams();
   const navigate = useNavigate();
@@ -22,6 +24,7 @@ function Room() {
 
   const monacoRef = useRef(null);
   const decorationsRef = useRef({});
+  const userColorMapRef = useRef({});
   const isRemoteUpdateRef = useRef(false);
   const languageRef = useRef("javascript");
   const codesRef = useRef({ ...EMPTY_CODES });
@@ -33,15 +36,6 @@ function Room() {
   const [showUsers, setShowUsers] = useState(false);
   const [language, setLanguage] = useState("javascript");
   const [pendingLanguage, setPendingLanguage] = useState(null);
-
-  const cursorColors = [
-    "#ef4444",
-    "#3b82f6",
-    "#22c55e",
-    "#f59e0b",
-    "#a855f7",
-    "#ec4899",
-  ];
 
   useEffect(() => {
     languageRef.current = language;
@@ -94,9 +88,18 @@ function Room() {
 
     socket.on("users-updated", (userList) => {
       setUsers(userList);
+
+      userColorMapRef.current = userList.reduce((colorMap, user) => {
+        colorMap[user.socketId] = user.colorIndex ?? 0;
+        return colorMap;
+      }, {});
     });
 
-    socket.on("user-left", (socketId) => {
+    socket.on("user-left", (data) => {
+      const socketId = typeof data === "string" ? data : data?.socketId;
+
+      if (!socketId) return;
+
       if (decorationsRef.current[socketId]) {
         editorRef.current.deltaDecorations(
           decorationsRef.current[socketId],
@@ -105,6 +108,8 @@ function Room() {
 
         delete decorationsRef.current[socketId];
       }
+
+      delete userColorMapRef.current[socketId];
     });
 
     socket.on("room-error", (data) => {
@@ -125,7 +130,9 @@ function Room() {
       editorRef.current.setValue(code ?? "");
     });
 
-    socket.on("cursor-update", ({ cursor, userName, senderId }) => {
+    socket.on(
+      "cursor-update",
+      ({ cursor, userName, senderId, colorIndex: serverColorIndex }) => {
       if (
         !editorRef.current ||
         !monacoRef.current ||
@@ -134,24 +141,10 @@ function Room() {
         return;
       }
 
-      const color =
-        cursorColors[senderId.length % cursorColors.length];
-
-      const styleId = `cursor-style-${senderId}`;
-
-      if (!document.getElementById(styleId)) {
-        const style = document.createElement("style");
-
-        style.id = styleId;
-
-        style.innerHTML = `
-            .remote-cursor-${senderId} {
-              border-left: 3px solid ${color};
-            }
-          `;
-
-        document.head.appendChild(style);
-      }
+        const colorIndex =
+          serverColorIndex ??
+          userColorMapRef.current[senderId] ??
+          0;
 
       const decoration = {
         range: new monacoRef.current.Range(
@@ -162,8 +155,15 @@ function Room() {
         ),
 
         options: {
-          className: "remote-cursor",
-          afterContentClassName: "remote-cursor-label",
+          stickiness:
+            monacoRef.current.editor.TrackedRangeStickiness
+              .NeverGrowsWhenTypingAtEdges,
+          className: `remote-cursor remote-cursor-color-${colorIndex}`,
+          after: {
+            content: " ",
+            inlineClassName:
+              `remote-cursor-marker remote-cursor-marker-color-${colorIndex}`,
+          },
           hoverMessage: {
             value: userName,
           },
@@ -175,7 +175,8 @@ function Room() {
           decorationsRef.current[senderId] || [],
           [decoration]
         );
-    });
+      }
+    );
 
     return () => {
       socket.disconnect();
@@ -311,7 +312,11 @@ function Room() {
               <div className="participants-list">
                 {users.map((user) => (
                   <div key={user.socketId} className="participant-card">
-                    <div className="participant-avatar">
+                    <div
+                      className={
+                        `participant-avatar user-color-${user.colorIndex ?? 0}`
+                      }
+                    >
                       {user.userName?.charAt(0)?.toUpperCase()}
                     </div>
 
