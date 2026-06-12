@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import Editor from "@monaco-editor/react";
 import { io } from "socket.io-client";
 import "./Room.css";
-import logo from "../assets/logo.png";
+import logo from "/logo.png";
 
 const EMPTY_CODES = {
   javascript: "",
