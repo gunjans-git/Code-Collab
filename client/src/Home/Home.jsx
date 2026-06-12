@@ -28,6 +28,7 @@ function Home() {
     try {
       setLoading(true);
 
+      // const res = await fetch(`http://localhost:3000/api/rooms/create`, {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/rooms/create`, {
         method: "POST",
         headers: {
