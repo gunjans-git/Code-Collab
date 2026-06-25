@@ -2,8 +2,11 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Editor from "@monaco-editor/react";
 import { io } from "socket.io-client";
+import * as Y from "yjs";
+import { MonacoBinding } from "y-monaco";
 import "./Room.css";
-import logo from "../assets/logo.png";
+import ChatBox from "./ChatBox";
+import RoomHeader from "./RoomHeader";
 
 const EMPTY_CODES = {
   javascript: "",
@@ -20,32 +23,104 @@ function Room() {
 
   const socketRef = useRef(null);
   const editorRef = useRef(null);
-  const dropdownRef = useRef(null);
 
   const monacoRef = useRef(null);
   const decorationsRef = useRef({});
   const userColorMapRef = useRef({});
-  const isRemoteUpdateRef = useRef(false);
   const languageRef = useRef("javascript");
   const codesRef = useRef({ ...EMPTY_CODES });
   const pendingRoomCodeRef = useRef(null);
 
+  // Yjs references
+  const ydocRef = useRef(null);
+  const bindingRef = useRef(null);
+  const ytextRef = useRef(null);
+  const emitTimeoutRef = useRef(null);
+
   const username = localStorage.getItem("username") || "Anonymous";
 
   const [users, setUsers] = useState([]);
-  const [showUsers, setShowUsers] = useState(false);
   const [language, setLanguage] = useState("javascript");
   const [pendingLanguage, setPendingLanguage] = useState(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     languageRef.current = language;
   }, [language]);
 
+  const debouncedEmitCodeChange = (code, lang) => {
+    if (emitTimeoutRef.current) {
+      clearTimeout(emitTimeoutRef.current);
+    }
+
+    emitTimeoutRef.current = setTimeout(() => {
+      socketRef.current?.emit("code-change", {
+        roomId,
+        code,
+        language: lang,
+      });
+    }, 1500);
+  };
+
+  const handleYtextChange = () => {
+    if (!ytextRef.current) return;
+    const currentCode = ytextRef.current.toString();
+    debouncedEmitCodeChange(currentCode, languageRef.current);
+  };
+
+  const bindYjsToMonaco = (lang) => {
+    if (!editorRef.current || !ydocRef.current) return;
+
+    if (bindingRef.current) {
+      bindingRef.current.destroy();
+      bindingRef.current = null;
+    }
+
+    if (ytextRef.current) {
+      ytextRef.current.unobserve(handleYtextChange);
+    }
+
+    const ytext = ydocRef.current.getText(lang);
+    ytextRef.current = ytext;
+
+    const binding = new MonacoBinding(
+      ytext,
+      editorRef.current.getModel(),
+      new Set([editorRef.current])
+    );
+    bindingRef.current = binding;
+
+    ytext.observe(handleYtextChange);
+  };
+
   useEffect(() => {
-    // const socket = io("http://localhost:3000");
+    const ydoc = new Y.Doc();
+    ydocRef.current = ydoc;
+
+    const handleYdocUpdate = (update, origin) => {
+      if (origin !== "socket") {
+        socketRef.current?.emit("yjs-update", {
+          roomId,
+          update: Array.from(update),
+        });
+      }
+    };
+    ydoc.on("update", handleYdocUpdate);
+
+    return () => {
+      if (bindingRef.current) {
+        bindingRef.current.destroy();
+      }
+      if (ytextRef.current) {
+        ytextRef.current.unobserve(handleYtextChange);
+      }
+      ydoc.off("update", handleYdocUpdate);
+      ydoc.destroy();
+    };
+  }, [roomId]);
+
+  useEffect(() => {
     const socket = io(import.meta.env.VITE_SOCKET_URL);
-
-
     socketRef.current = socket;
 
     socket.emit("join-room", {
@@ -53,7 +128,7 @@ function Room() {
       userName: username,
     });
 
-    socket.on("room-state", ({ activeLanguage, code, codes }) => {
+    socket.on("room-state", ({ activeLanguage, code, codes, isFirstUser }) => {
       if (codes) {
         codesRef.current = { ...EMPTY_CODES, ...codes };
       }
@@ -62,29 +137,47 @@ function Room() {
       setLanguage(activeLanguage);
       languageRef.current = activeLanguage;
 
+      const ydoc = ydocRef.current;
+      if (ydoc && isFirstUser) {
+        const codesToUse = codes || { ...EMPTY_CODES, [activeLanguage]: code };
+        for (const lang of Object.keys(EMPTY_CODES)) {
+          const ytextForLang = ydoc.getText(lang);
+          if (ytextForLang.toString() === "" && codesToUse[lang]) {
+            ytextForLang.insert(0, codesToUse[lang]);
+          }
+        }
+      }
+
       if (!editorRef.current) {
         pendingRoomCodeRef.current = code ?? "";
         return;
       }
 
-      isRemoteUpdateRef.current = true;
-      editorRef.current.setValue(code ?? "");
+      bindYjsToMonaco(activeLanguage);
     });
 
-    socket.on("code-update", ({ code, language: updateLang }) => {
-      if (!editorRef.current) return;
-
-      codesRef.current[updateLang] = code;
-
-      if (updateLang !== languageRef.current) {
-        return;
+    socket.on("yjs-update", ({ update }) => {
+      if (ydocRef.current) {
+        const uint8 = new Uint8Array(update);
+        Y.applyUpdate(ydocRef.current, uint8, "socket");
       }
+    });
 
-      const currentCode = editorRef.current.getValue();
+    socket.on("yjs-sync-from-peer", ({ update }) => {
+      if (ydocRef.current) {
+        const uint8 = new Uint8Array(update);
+        Y.applyUpdate(ydocRef.current, uint8, "socket");
+      }
+    });
 
-      if (currentCode !== code) {
-        isRemoteUpdateRef.current = true;
-        editorRef.current.setValue(code);
+    socket.on("user-joined", ({ socketId }) => {
+      if (ydocRef.current) {
+        const fullUpdate = Y.encodeStateAsUpdate(ydocRef.current);
+        socket.emit("yjs-sync-to-peer", {
+          roomId,
+          targetSocketId: socketId,
+          update: Array.from(fullUpdate),
+        });
       }
     });
 
@@ -103,10 +196,12 @@ function Room() {
       if (!socketId) return;
 
       if (decorationsRef.current[socketId]) {
-        editorRef.current.deltaDecorations(
-          decorationsRef.current[socketId],
-          []
-        );
+        if (editorRef.current) {
+          editorRef.current.deltaDecorations(
+            decorationsRef.current[socketId],
+            []
+          );
+        }
 
         delete decorationsRef.current[socketId];
       }
@@ -119,21 +214,15 @@ function Room() {
       setPendingLanguage(null);
     });
 
-    socket.on("language-update", ({ language: nextLanguage, code }) => {
-      codesRef.current[nextLanguage] = code ?? "";
-
+    socket.on("language-update", ({ language: nextLanguage }) => {
       setPendingLanguage(null);
       setLanguage(nextLanguage);
       languageRef.current = nextLanguage;
 
-      if (!editorRef.current) return;
-
-      isRemoteUpdateRef.current = true;
-      editorRef.current.setValue(code ?? "");
+      bindYjsToMonaco(nextLanguage);
     });
 
-    socket.on(
-      "cursor-update",
+    socket.on("cursor-update",
       ({ cursor, userName, senderId, colorIndex: serverColorIndex }) => {
       if (
         !editorRef.current ||
@@ -143,10 +232,10 @@ function Room() {
         return;
       }
 
-        const colorIndex =
-          serverColorIndex ??
-          userColorMapRef.current[senderId] ??
-          0;
+      const colorIndex =
+        serverColorIndex ??
+        userColorMapRef.current[senderId] ??
+        0;
 
       const decoration = {
         range: new monacoRef.current.Range(
@@ -185,30 +274,18 @@ function Room() {
     };
   }, [roomId, username]);
 
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target)
-      ) {
-        setShowUsers(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, []);
+  // Dropdown click-outside listener moved to RoomHeader
 
   const handleEditorDidMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
 
-    if (pendingRoomCodeRef.current !== null) {
-      isRemoteUpdateRef.current = true;
-      editor.setValue(pendingRoomCodeRef.current);
+    // Bind Yjs to Monaco
+    bindYjsToMonaco(languageRef.current);
+
+    const ytext = ydocRef.current?.getText(languageRef.current);
+    if (ytext && ytext.toString() === "" && pendingRoomCodeRef.current !== null) {
+      ytext.insert(0, pendingRoomCodeRef.current);
       pendingRoomCodeRef.current = null;
     }
 
@@ -219,24 +296,6 @@ function Room() {
           lineNumber: e.position.lineNumber,
           column: e.position.column,
         },
-      });
-    });
-
-    editor.onDidChangeModelContent(() => {
-      if (isRemoteUpdateRef.current) {
-        isRemoteUpdateRef.current = false;
-        return;
-      }
-
-      const code = editor.getValue();
-      const activeLanguage = languageRef.current;
-
-      codesRef.current[activeLanguage] = code;
-
-      socketRef.current?.emit("code-change", {
-        roomId,
-        code,
-        language: activeLanguage,
       });
     });
   };
@@ -260,89 +319,21 @@ function Room() {
 
   return (
     <div className="room-container">
-      <header className="room-header">
-        <div className="room-left">
-          <h2 className="room-title">
-            <img src={logo} alt="CodeCollab" className="w-14 h-14" />
-          </h2>
-
-          <span className="room-id">
-            Room:
-            <button
-              className="room-id-btn "
-              onClick={() => navigator.clipboard.writeText(roomId)}
-            >
-              {roomId}
-            </button>
-          </span>
-
-          <select
-            value={pendingLanguage ?? language}
-            onChange={handleLanguageChange}
-            className="language-select"
-          >
-            <option value="javascript">JavaScript</option>
-            <option value="python">Python</option>
-            <option value="cpp">C++</option>
-            <option value="java">Java</option>
-          </select>
-        </div>
-
-        <div ref={dropdownRef} className="user-dropdown-wrapper">
-          <button
-            className="user-profile-btn"
-            onClick={() => setShowUsers(!showUsers)}
-          >
-            <div className="avatar-circle">
-              {username.charAt(0).toUpperCase()}
-            </div>
-
-            <div className="user-info">
-              <span className="user-name">{username}</span>
-              <span className="user-status">Online</span>
-            </div>
-
-            <span className="dropdown-arrow">▼</span>
-          </button>
-
-          {showUsers && (
-            <div className="user-dropdown-menu">
-              <div className="dropdown-title">
-                Participants ({users.length})
-              </div>
-
-              <div className="participants-list">
-                {users.map((user) => (
-                  <div key={user.socketId} className="participant-card">
-                    <div
-                      className={
-                        `participant-avatar user-color-${user.colorIndex ?? 0}`
-                      }
-                    >
-                      {user.userName?.charAt(0)?.toUpperCase()}
-                    </div>
-
-                    <div className="participant-details">
-                      <div className="participant-name">
-                        {user.userName}
-                        {user.userName === username && " (You)"}
-                      </div>
-
-                      <div className="participant-online">● Online</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="dropdown-actions">
-                <button className="leave-btn" onClick={() => navigate("/")}>
-                  Leave Room
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </header>
+      <RoomHeader
+        roomId={roomId}
+        copied={copied}
+        onCopy={() => {
+          navigator.clipboard.writeText(roomId);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        }}
+        language={language}
+        pendingLanguage={pendingLanguage}
+        handleLanguageChange={handleLanguageChange}
+        username={username}
+        users={users}
+        navigate={navigate}
+      />
 
       <div className="editor-container">
         <Editor
@@ -359,6 +350,13 @@ function Room() {
           }}
         />
       </div>
+      {socketRef.current && (
+        <ChatBox
+          socket={socketRef.current}
+          roomId={roomId}
+          username={username}
+        />
+      )}
     </div>
   );
 }

@@ -1,7 +1,33 @@
 const roomService = require("../services/roomService");
 const Room = require("../models/Room");
+const Message = require("../models/Message");
 
 const USER_COLOR_COUNT = 8;
+
+const registerJoinRoomHandler = require("../handlers/joinRoomHandler");
+
+const saveTimeoutMap = new Map(); // Key: roomId_lang
+
+function scheduleDbSave(roomId, lang, code) {
+  const key = `${roomId}_${lang}`;
+  if (saveTimeoutMap.has(key)) {
+    clearTimeout(saveTimeoutMap.get(key));
+  }
+
+  const timeoutId = setTimeout(async () => {
+    saveTimeoutMap.delete(key);
+    try {
+      await Room.findOneAndUpdate(
+        { roomId },
+        { [`codes.${lang}`]: code }
+      );
+    } catch (err) {
+      console.error(`Failed to save code for room ${roomId}, language ${lang}:`, err.message);
+    }
+  }, 2000); // Debounce for 2 seconds
+
+  saveTimeoutMap.set(key, timeoutId);
+}
 
 function getNextUserColorIndex(users) {
   const usedColors = new Set(
@@ -29,162 +55,178 @@ function setupSocket(io) {
   io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
 
-    socket.on("join-room", async ({ roomId, userName }) => {
-      const normalizedRoomId = roomId?.trim().toUpperCase();
-
-      if (!normalizedRoomId) {
-        socket.emit("room-error", { message: "Invalid room code" });
-        return;
-      }
-
-      let room = roomService.getRoom(normalizedRoomId);
-      const dbRoom = await Room.findOne({ roomId: normalizedRoomId });
-
-      if (!room) {
-        if (!dbRoom) {
-          socket.emit("room-error", { message: "Room does not exist" });
-          return;
-        }
-
-        room = roomService.restoreRoom(normalizedRoomId, dbRoom);
-      }
-
-      socket.join(normalizedRoomId);
-
-      socket.data.roomId = normalizedRoomId;
-      socket.data.userName = userName || "Anonymous";
-      socket.data.colorIndex = getNextUserColorIndex(room.users);
-
-      room.users.set(socket.id, {
-        userName: socket.data.userName,
-        colorIndex: socket.data.colorIndex,
-      });
-
-      const users = getUsersPayload(room.users);
-
-      io.to(normalizedRoomId).emit("users-updated", users);
-
-      socket.emit("room-state", {
-        activeLanguage: room.activeLanguage,
-        code: room.codes[room.activeLanguage] ?? "",
-        codes: room.codes,
-      });
-
-      socket.to(normalizedRoomId).emit("user-joined", {
-        socketId: socket.id,
-        userName: socket.data.userName,
-        colorIndex: socket.data.colorIndex,
-        message: `${socket.data.userName} joined the room`,
-      });
-
-      io.to(normalizedRoomId).emit("room-users", {
-        count: room.users.size,
-      });
-    });
+    try {
+      registerJoinRoomHandler(
+        io,
+        socket,
+        roomService,
+        getNextUserColorIndex,
+        getUsersPayload
+      );
+    } catch (error) {
+      console.error("Error registering join room handler:", error.message);
+    }
 
     socket.on("code-change", async ({ roomId, code, language }) => {
-      const normalizedRoomId = roomId?.trim().toUpperCase();
+      try {
+        const normalizedRoomId = roomId?.trim().toUpperCase();
+        if (!normalizedRoomId) return;
 
-      if (!normalizedRoomId) return;
+        const room = roomService.getRoom(normalizedRoomId);
+        if (!room) return;
 
-      const room = roomService.getRoom(normalizedRoomId);
+        const lang = roomService.normalizeLanguage(
+          language || room.activeLanguage
+        );
 
-      if (!room) return;
+        room.codes[lang] = code;
 
-      const lang = roomService.normalizeLanguage(
-        language || room.activeLanguage
-      );
-
-      room.codes[lang] = code;
-
-      await Room.findOneAndUpdate(
-        { roomId: normalizedRoomId },
-        { [`codes.${lang}`]: code }
-      );
-
-      socket.to(normalizedRoomId).emit("code-update", {
-        code,
-        language: lang,
-        senderId: socket.id,
-      });
+        // Debounce database write
+        scheduleDbSave(normalizedRoomId, lang, code);
+      } catch (error) {
+        console.error("Error in code-change handler:", error.message);
+      }
     });
 
     socket.on(
       "language-change",
       async ({ roomId, previousLanguage, language, code }) => {
-        const normalizedRoomId = roomId?.trim().toUpperCase();
+        try {
+          const normalizedRoomId = roomId?.trim().toUpperCase();
+          if (!normalizedRoomId) return;
 
-        if (!normalizedRoomId) return;
+          const room = roomService.getRoom(normalizedRoomId);
+          if (!room) return;
 
-        const room = roomService.getRoom(normalizedRoomId);
+          const prevLang = roomService.normalizeLanguage(
+            previousLanguage || room.activeLanguage
+          );
+          const nextLang = roomService.normalizeLanguage(language);
 
-        if (!room) return;
-
-        const prevLang = roomService.normalizeLanguage(
-          previousLanguage || room.activeLanguage
-        );
-        const nextLang = roomService.normalizeLanguage(language);
-
-        if (code !== undefined) {
-          room.codes[prevLang] = code;
-        }
-
-        room.activeLanguage = nextLang;
-
-        const nextCode = room.codes[nextLang] ?? "";
-
-        await Room.findOneAndUpdate(
-          { roomId: normalizedRoomId },
-          {
-            activeLanguage: nextLang,
-            [`codes.${prevLang}`]: room.codes[prevLang],
+          if (code !== undefined) {
+            room.codes[prevLang] = code;
+            // Debounce save for previous language
+            scheduleDbSave(normalizedRoomId, prevLang, code);
           }
-        );
 
-        io.to(normalizedRoomId).emit("language-update", {
-          language: nextLang,
-          code: nextCode,
-        });
+          room.activeLanguage = nextLang;
+
+          await Room.findOneAndUpdate(
+            { roomId: normalizedRoomId },
+            { activeLanguage: nextLang }
+          );
+
+          io.to(normalizedRoomId).emit("language-update", {
+            language: nextLang,
+          });
+        } catch (error) {
+          console.error("Error in language-change handler:", error.message);
+        }
       }
     );
 
     socket.on("cursor-move", ({ roomId, cursor }) => {
-      const normalizedRoomId = roomId?.trim().toUpperCase();
-      if (!normalizedRoomId) return;
+      try {
+        const normalizedRoomId = roomId?.trim().toUpperCase();
+        if (!normalizedRoomId) return;
 
-      socket.to(normalizedRoomId).emit("cursor-update", {
-        cursor,
-        senderId: socket.id,
-        userName: socket.data.userName,
-        colorIndex: socket.data.colorIndex,
-      });
+        socket.to(normalizedRoomId).emit("cursor-update", {
+          cursor,
+          senderId: socket.id,
+          userName: socket.data.userName,
+          colorIndex: socket.data.colorIndex,
+        });
+      } catch (error) {
+        console.error("Error in cursor-move handler:", error.message);
+      }
+    });
+
+    socket.on("yjs-update", ({ roomId, update }) => {
+      try {
+        const normalizedRoomId = roomId?.trim().toUpperCase();
+        if (!normalizedRoomId) return;
+
+        socket.to(normalizedRoomId).emit("yjs-update", { update });
+      } catch (error) {
+        console.error("Error in yjs-update handler:", error.message);
+      }
+    });
+
+    socket.on("yjs-sync-to-peer", ({ roomId, targetSocketId, update }) => {
+      try {
+        const normalizedRoomId = roomId?.trim().toUpperCase();
+        if (!normalizedRoomId) return;
+
+        io.to(targetSocketId).emit("yjs-sync-from-peer", { update });
+      } catch (error) {
+        console.error("Error in yjs-sync-to-peer handler:", error.message);
+      }
+    });
+
+    //**  CHAT BOX  SETTINGS *****//
+
+    socket.on("send-message", async (data) => {
+      try {
+        const room = roomService.getRoom(data.roomId);
+        const user = room?.users?.get(socket.id);
+        const colorIndex = user?.colorIndex ?? 0;
+
+        const savedMessage = await Message.create({
+          roomId: data.roomId,
+          username: data.username,
+          message: data.message,
+          color: String(colorIndex),
+        });
+
+        io.to(data.roomId).emit("receive-message", savedMessage);
+      } catch (error) {
+        console.error("Error in send-message handler:", error.message);
+      }
     });
 
     socket.on("disconnect", () => {
-      const roomId = socket.data.roomId;
+      try {
+        const roomId = socket.data.roomId;
 
-      if (roomId && roomService.roomExists(roomId)) {
-        const room = roomService.getRoom(roomId);
+        if (roomId && roomService.roomExists(roomId)) {
+          const room = roomService.getRoom(roomId);
 
-        room.users.delete(socket.id);
+          room.users.delete(socket.id);
 
-        const users = getUsersPayload(room.users);
+          const users = getUsersPayload(room.users);
 
-        io.to(roomId).emit("users-updated", users);
+          io.to(roomId).emit("users-updated", users);
 
-        socket.to(roomId).emit("user-left", {
-          socketId: socket.id,
-          userName: socket.data.userName || "Anonymous",
-          message: `${socket.data.userName || "A user"} left the room`,
-        });
+          socket.to(roomId).emit("user-left", {
+            socketId: socket.id,
+            userName: socket.data.userName || "Anonymous",
+            message: `${socket.data.userName || "A user"} left the room`,
+          });
 
-        io.to(roomId).emit("room-users", {
-          count: room.users.size,
-        });
+          io.to(roomId).emit("room-users", {
+            count: room.users.size,
+          });
 
-        if (room.users.size === 0) {
-          roomService.deleteRoom(roomId);
+          if (room.users.size === 0) {
+            // Trigger immediate save of all pending debounced writes for this room before deleting
+            for (const lang of roomService.SUPPORTED_LANGUAGES) {
+              const key = `${roomId}_${lang}`;
+              if (saveTimeoutMap.has(key)) {
+                clearTimeout(saveTimeoutMap.get(key));
+                saveTimeoutMap.delete(key);
+
+                Room.findOneAndUpdate(
+                  { roomId },
+                  { [`codes.${lang}`]: room.codes[lang] }
+                ).catch(err => console.error("Error saving final room state:", err.message));
+              }
+            }
+
+            roomService.deleteRoom(roomId);
+          }
         }
+      } catch (error) {
+        console.error("Error in disconnect handler:", error.message);
       }
 
       console.log("User disconnected:", socket.id);
