@@ -10,7 +10,7 @@ export default function RoomHeader({
   handleLanguageChange,
   username,
   users,
-  navigate,
+  onLeave,
 }) {
   const [showUsers, setShowUsers] = useState(false);
   const dropdownRef = useRef(null);
@@ -104,7 +104,7 @@ export default function RoomHeader({
             </div>
 
             <div className="dropdown-actions">
-              <button className="leave-btn" onClick={() => navigate("/")}>
+              <button className="leave-btn" onClick={onLeave}>
                 Leave Room
               </button>
             </div>

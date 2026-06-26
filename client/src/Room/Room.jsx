@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useBlocker } from "react-router-dom";
 import Editor from "@monaco-editor/react";
 import { io } from "socket.io-client";
 import * as Y from "yjs";
@@ -43,6 +43,42 @@ function Room() {
   const [language, setLanguage] = useState("javascript");
   const [pendingLanguage, setPendingLanguage] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [socketInstance, setSocketInstance] = useState(null);
+  const [isLeaving, setIsLeaving] = useState(false);
+
+  const blocker = useBlocker(
+    ({ nextLocation }) => {
+      return !isLeaving && nextLocation.pathname !== window.location.pathname;
+    }
+  );
+
+  useEffect(() => {
+    if (blocker.state === "blocked") {
+      alert("To leave the room, please click the 'Leave Room' button in the menu.");
+      blocker.reset();
+    }
+  }, [blocker]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (!isLeaving) {
+        e.preventDefault();
+        e.returnValue = "Are you sure you want to leave the room?";
+        return e.returnValue;
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [isLeaving]);
+
+  const handleLeaveRoom = () => {
+    setIsLeaving(true);
+    setTimeout(() => {
+      navigate("/");
+    }, 0);
+  };
 
   useEffect(() => {
     languageRef.current = language;
@@ -80,12 +116,30 @@ function Room() {
       ytextRef.current.unobserve(handleYtextChange);
     }
 
+    const model = editorRef.current.getModel();
+    if (model) {
+      model.updateOptions({
+        tabSize: 4,
+        insertSpaces: true,
+      });
+    }
+
     const ytext = ydocRef.current.getText(lang);
     ytextRef.current = ytext;
 
+    // 1. Initialize Yjs text from server cache if Yjs text is empty but saved code exists
+    if (ytext.toString() === "" && codesRef.current && codesRef.current[lang]) {
+      ytext.insert(0, codesRef.current[lang]);
+    }
+
+    // 2. Update model value to match Yjs text BEFORE binding to avoid cross-language merges
+    if (model) {
+      model.setValue(ytext.toString());
+    }
+
     const binding = new MonacoBinding(
       ytext,
-      editorRef.current.getModel(),
+      model,
       new Set([editorRef.current])
     );
     bindingRef.current = binding;
@@ -122,11 +176,21 @@ function Room() {
   useEffect(() => {
     const socket = io(import.meta.env.VITE_SOCKET_URL);
     socketRef.current = socket;
+    setTimeout(() => {
+      setSocketInstance(socket);
+    }, 0);
 
-    socket.emit("join-room", {
-      roomId,
-      userName: username,
-    });
+    const handleConnect = () => {
+      socket.emit("join-room", {
+        roomId,
+        userName: username,
+      });
+    };
+
+    socket.on("connect", handleConnect);
+    if (socket.connected) {
+      handleConnect();
+    }
 
     socket.on("room-state", ({ activeLanguage, code, codes, isFirstUser }) => {
       if (codes) {
@@ -250,11 +314,6 @@ function Room() {
             monacoRef.current.editor.TrackedRangeStickiness
               .NeverGrowsWhenTypingAtEdges,
           className: `remote-cursor remote-cursor-color-${colorIndex}`,
-          after: {
-            content: " ",
-            inlineClassName:
-              `remote-cursor-marker remote-cursor-marker-color-${colorIndex}`,
-          },
           hoverMessage: {
             value: userName,
           },
@@ -271,6 +330,7 @@ function Room() {
 
     return () => {
       socket.disconnect();
+      setSocketInstance(null);
     };
   }, [roomId, username]);
 
@@ -332,7 +392,7 @@ function Room() {
         handleLanguageChange={handleLanguageChange}
         username={username}
         users={users}
-        navigate={navigate}
+        onLeave={handleLeaveRoom}
       />
 
       <div className="editor-container">
@@ -347,12 +407,15 @@ function Room() {
             },
             fontSize: 16,
             automaticLayout: true,
+            tabSize: 4,
+            insertSpaces: true,
+            detectIndentation: false,
           }}
         />
       </div>
-      {socketRef.current && (
+      {socketInstance && (
         <ChatBox
-          socket={socketRef.current}
+          socket={socketInstance}
           roomId={roomId}
           username={username}
         />
