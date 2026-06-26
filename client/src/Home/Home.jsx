@@ -102,9 +102,9 @@ function Home() {
           <span className="header-logo-text title-font">Code Collab</span>
         </div>
         <nav className="header-nav">
-          <a href="#features" className="nav-link">Features</a>
-          <a href="#about" className="nav-link">About</a>
-          <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="nav-link">GitHub</a>
+          {/* <a href="#features" className="nav-link">Features</a>
+          <a href="#about" className="nav-link">About</a> */}
+          <a href="https://github.com/gunjans-git/Code-Collab" target="_blank" rel="noopener noreferrer" className="nav-link">GitHub</a>
         </nav>
       </header>
 
@@ -118,7 +118,7 @@ function Home() {
         <div className="hero-section">
           {/* Big logo image front and centre */}
           <div className="hero-logo-wrapper">
-            <img src="/logo.png" alt="Code Collab Logo" className="hero-logo-img" />
+            <img src="/logo.png" alt="Code-Collab Logo" className="hero-logo-img" />
           </div>
           
           <h1 className="hero-title title-font">Code Collab</h1>

@@ -8,6 +8,7 @@ const connectDB = require("./databases/connectDB");
 
 const PORT = process.env.PORT || 3000;
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
+const HOST = '0.0.0.0';
 
 connectDB();
 
@@ -22,6 +23,5 @@ const io = new Server(server, {
 
 setupSocket(io);
 
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+server.listen(PORT, HOST, () => {
+console.log(`Server listening on http://${HOST}:${PORT}`);});

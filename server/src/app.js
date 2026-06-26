@@ -27,7 +27,7 @@ const distPath = path.join(__dirname, "../../client/dist");
 app.use(express.static(distPath));
 
 // For any other GET request that is not an API call, serve the index.html
-app.get("(.*)", (req, res) => {
+app.get(/(.*)/, (req, res) => {
   if (req.accepts("html")) {
     res.sendFile(path.join(distPath, "index.html"), (err) => {
       if (err) {

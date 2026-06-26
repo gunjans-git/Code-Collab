@@ -64,3 +64,5 @@ client/dist/
 # .unlighthouse/
 
 code_assessment.md
+
+.node_modules/
