@@ -127,12 +127,10 @@ function Room() {
     const ytext = ydocRef.current.getText(lang);
     ytextRef.current = ytext;
 
-    // 1. Initialize Yjs text from server cache if Yjs text is empty but saved code exists
-    if (ytext.toString() === "" && codesRef.current && codesRef.current[lang]) {
-      ytext.insert(0, codesRef.current[lang]);
-    }
-
-    // 2. Update model value to match Yjs text BEFORE binding to avoid cross-language merges
+    // Update model value to match Yjs text BEFORE binding to avoid cross-language merges.
+    // Seeding from the DB/cache snapshot is handled once, exclusively, by the isFirstUser
+    // branch in the room-state handler — doing it here too would race with a real peer's
+    // Yjs sync and duplicate the code (two independent inserts merge instead of dedupe).
     if (model) {
       model.setValue(ytext.toString());
     }
@@ -274,8 +272,10 @@ function Room() {
     });
 
     socket.on("room-error", (data) => {
-      console.log("ROOM ERROR:", data);
       setPendingLanguage(null);
+      alert(data?.message || "Something went wrong with this room");
+      setIsLeaving(true);
+      navigate("/");
     });
 
     socket.on("language-update", ({ language: nextLanguage }) => {

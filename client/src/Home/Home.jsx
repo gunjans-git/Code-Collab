@@ -37,14 +37,10 @@ function Home() {
 
       const data = await res.json();
 
-      console.log("Create Room Response:", data);
-
       if (!res.ok) {
         alert(data.message || "Failed to create room");
         return;
       }
-
-      console.log("Navigating to:", `/room/${data.roomId}`);
 
       navigate(`/room/${data.roomId}`);
     } catch (error) {
