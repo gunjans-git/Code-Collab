@@ -1,0 +1,157 @@
+/* ===========================
+   TERMINAL
+=========================== */
+
+.terminal-panel {
+  background: #181818;
+
+  border-top: 1px solid #2a2a2a;
+
+  display: flex;
+  flex-direction: column;
+
+  font-family: "Inter", sans-serif;
+}
+
+.terminal-collapsed {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 10px 20px;
+}
+
+.terminal-resize-handle {
+  flex-shrink: 0;
+
+  height: 6px;
+
+  cursor: row-resize;
+
+  background: transparent;
+}
+
+.terminal-resize-handle:hover,
+.terminal-resize-handle:active {
+  background: rgba(122, 139, 90, 0.4);
+}
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 10px 20px;
+
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.terminal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.terminal-toggle {
+  background: transparent;
+
+  border: none;
+
+  color: #a3b18a;
+
+  font-weight: 600;
+  font-size: 0.9rem;
+
+  cursor: pointer;
+}
+
+.terminal-run-btn {
+  background: #7a8b5a;
+
+  color: white;
+
+  border: none;
+
+  border-radius: 8px;
+
+  padding: 8px 18px;
+
+  font-weight: 600;
+  font-size: 0.85rem;
+
+  cursor: pointer;
+
+  transition: 0.2s ease;
+}
+
+.terminal-run-btn:hover:not(:disabled) {
+  background: #8a9c68;
+}
+
+.terminal-run-btn:disabled {
+  opacity: 0.6;
+
+  cursor: not-allowed;
+}
+
+.terminal-stdin {
+  background: #1e1e1e;
+
+  color: #f5f1e8;
+
+  border: none;
+  border-bottom: 1px solid #2a2a2a;
+
+  padding: 10px 20px;
+
+  font-size: 0.85rem;
+
+  outline: none;
+}
+
+.terminal-stdin::placeholder {
+  color: #555;
+}
+
+.terminal-output {
+  flex: 1;
+
+  overflow-y: auto;
+
+  padding: 14px 20px;
+}
+
+.terminal-output-cpp {
+  overflow: hidden;
+
+  padding: 8px 12px;
+}
+
+.cpp-xterm-container {
+  height: 100%;
+}
+
+.terminal-output pre {
+  margin: 0;
+
+  white-space: pre-wrap;
+  word-break: break-word;
+
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.terminal-stdout {
+  color: #f5f1e8;
+}
+
+.terminal-error {
+  color: #c56a3d;
+}
+
+.terminal-placeholder {
+  color: #555;
+
+  font-size: 0.85rem;
+}

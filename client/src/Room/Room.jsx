@@ -7,6 +7,7 @@ import { MonacoBinding } from "y-monaco";
 import "./Room.css";
 import ChatBox from "./ChatBox";
 import RoomHeader from "./RoomHeader";
+import Terminal from "./Terminal";
 
 const EMPTY_CODES = {
   javascript: "",
@@ -45,6 +46,10 @@ function Room() {
   const [copied, setCopied] = useState(false);
   const [socketInstance, setSocketInstance] = useState(null);
   const [isLeaving, setIsLeaving] = useState(false);
+  const [terminalOutput, setTerminalOutput] = useState(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [terminalCollapsed, setTerminalCollapsed] = useState(true);
+  const [terminalHeight, setTerminalHeight] = useState(260);
 
   const blocker = useBlocker(
     ({ nextLocation }) => {
@@ -271,6 +276,11 @@ function Room() {
       delete userColorMapRef.current[socketId];
     });
 
+    socket.on("terminal-output", (data) => {
+      setIsRunning(data.status === "running");
+      setTerminalOutput(data);
+    });
+
     socket.on("room-error", (data) => {
       setPendingLanguage(null);
       alert(data?.message || "Something went wrong with this room");
@@ -377,6 +387,17 @@ function Room() {
     });
   };
 
+  const handleRunCode = (stdin) => {
+    setTerminalCollapsed(false);
+
+    socketRef.current?.emit("run-code", {
+      roomId,
+      language: languageRef.current,
+      code: editorRef.current?.getValue() ?? "",
+      stdin,
+    });
+  };
+
   return (
     <div className="room-container">
       <RoomHeader
@@ -397,7 +418,7 @@ function Room() {
 
       <div className="editor-container">
         <Editor
-          height="90vh"
+          height="100%"
           language={language}
           theme="vs-dark"
           onMount={handleEditorDidMount}
@@ -413,11 +434,24 @@ function Room() {
           }}
         />
       </div>
+
+      <Terminal
+        output={terminalOutput}
+        isRunning={isRunning}
+        onRun={handleRunCode}
+        collapsed={terminalCollapsed}
+        onToggle={() => setTerminalCollapsed((prev) => !prev)}
+        height={terminalHeight}
+        onResize={setTerminalHeight}
+      />
+
       {socketInstance && (
         <ChatBox
           socket={socketInstance}
           roomId={roomId}
           username={username}
+          terminalCollapsed={terminalCollapsed}
+          terminalHeight={terminalHeight}
         />
       )}
     </div>

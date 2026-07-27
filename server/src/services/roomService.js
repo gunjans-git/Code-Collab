@@ -55,6 +55,7 @@ function registerRoom(roomId, roomData = {}) {
     users: new Map(),
     activeLanguage: roomData.activeLanguage || "javascript",
     codes: roomData.codes || createEmptyCodes(),
+    isRunning: false,
   });
 
   return rooms.get(roomId);
@@ -79,6 +80,7 @@ function restoreRoom(roomId, dbRoom) {
     users: new Map(),
     activeLanguage,
     codes,
+    isRunning: false,
   });
 
   return rooms.get(roomId);

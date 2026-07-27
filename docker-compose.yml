@@ -1,0 +1,20 @@
+services:
+  piston:
+    image: ghcr.io/engineer-man/piston
+    container_name: code-collab-piston
+    privileged: true
+    restart: unless-stopped
+    ports:
+      - "2000:2000"
+    volumes:
+      - piston-data:/piston
+
+volumes:
+  piston-data:
+
+# One-time setup after `docker-compose up -d`:
+#   cd server && npm run setup:piston
+# This installs the JS/Python/Java/C++ runtimes this project needs
+# (see server/scripts/install-piston-runtimes.js). The gcc package is ~690MB
+# and can be slow/flaky to fetch - if the install call hangs, just retry it;
+# check progress with `docker logs -f code-collab-piston`.

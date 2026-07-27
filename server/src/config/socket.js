@@ -1,8 +1,10 @@
 const roomService = require("../services/roomService");
+const executionService = require("../services/executionService");
 const Room = require("../models/Room");
 const Message = require("../models/Message");
 
 const USER_COLOR_COUNT = 8;
+const MAX_RUN_PAYLOAD_LENGTH = 64 * 1024; // 64KB
 
 const registerJoinRoomHandler = require("../handlers/joinRoomHandler");
 
@@ -124,6 +126,50 @@ function setupSocket(io) {
         }
       }
     );
+
+    socket.on("run-code", async ({ roomId, language, code, stdin }) => {
+      try {
+        const normalizedRoomId = roomId?.trim().toUpperCase();
+        if (!normalizedRoomId) return;
+
+        const room = roomService.getRoom(normalizedRoomId);
+        if (!room) return;
+
+        if (room.isRunning) return;
+
+        if ((code?.length || 0) > MAX_RUN_PAYLOAD_LENGTH || (stdin?.length || 0) > MAX_RUN_PAYLOAD_LENGTH) {
+          socket.emit("terminal-output", {
+            status: "done",
+            ok: false,
+            error: "Code or input is too large to run",
+          });
+          return;
+        }
+
+        const lang = roomService.normalizeLanguage(language || room.activeLanguage);
+
+        room.isRunning = true;
+        try {
+          io.to(normalizedRoomId).emit("terminal-output", {
+            status: "running",
+            language: lang,
+            triggeredBy: socket.data.userName || "Anonymous",
+          });
+
+          const result = await executionService.runCode({ language: lang, code, stdin });
+
+          io.to(normalizedRoomId).emit("terminal-output", {
+            status: "done",
+            language: lang,
+            ...result,
+          });
+        } finally {
+          room.isRunning = false;
+        }
+      } catch (error) {
+        console.error("Error in run-code handler:", error.message);
+      }
+    });
 
     socket.on("cursor-move", ({ roomId, cursor }) => {
       try {

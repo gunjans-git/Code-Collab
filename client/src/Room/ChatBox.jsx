@@ -11,10 +11,53 @@ const COLORS = [
   "#6f7f55", // Forest green (user-color-7)
 ];
 
-const ChatBox = ({ socket, roomId, username}) => {
+// Keeps the floating chat clear of the terminal's Run/toggle buttons, which
+// sit in the same bottom-right corner: collapsed terminal is a slim bar,
+// expanded terminal height is user-resizable (see Terminal.jsx).
+const TERMINAL_COLLAPSED_HEIGHT = 56;
+const CHAT_GAP = 20;
+
+const MIN_WIDTH = 280;
+const MAX_WIDTH = 520;
+const MIN_HEIGHT = 320;
+const MAX_HEIGHT = 720;
+
+const ChatBox = ({ socket, roomId, username, terminalCollapsed, terminalHeight }) => {
   const [messages, setMessages] = useState([]);
   const [message, setMessage] = useState("");
   const [isCollapsed, setIsCollapsed] = useState(true);
+  const [size, setSize] = useState({ width: 320, height: 480 });
+
+  const bottomOffset =
+    (terminalCollapsed ? TERMINAL_COLLAPSED_HEIGHT : terminalHeight) + CHAT_GAP;
+
+  const handleResizeStart = (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startWidth = size.width;
+    const startHeight = size.height;
+
+    const handleMouseMove = (moveEvent) => {
+      const nextWidth = Math.min(
+        MAX_WIDTH,
+        Math.max(MIN_WIDTH, startWidth + (startX - moveEvent.clientX))
+      );
+      const nextHeight = Math.min(
+        MAX_HEIGHT,
+        Math.max(MIN_HEIGHT, startHeight + (startY - moveEvent.clientY))
+      );
+      setSize({ width: nextWidth, height: nextHeight });
+    };
+
+    const handleMouseUp = () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  };
 
   const bottomRef = useRef(null);
 
@@ -58,9 +101,10 @@ const ChatBox = ({ socket, roomId, username}) => {
     return (
       <button
         onClick={() => setIsCollapsed(false)}
-        className="fixed bottom-6 right-6 bg-[#18181b]/80 hover:bg-[#18181b] backdrop-blur-xl
+        style={{ bottom: `${bottomOffset}px` }}
+        className="fixed right-6 bg-[#18181b]/80 hover:bg-[#18181b] backdrop-blur-xl
                    border border-white/10 rounded-full px-5 py-3 shadow-[0_10px_30px_rgba(0,0,0,0.4)]
-                   text-white font-medium flex items-center gap-2 z-50 transition-all hover:scale-[1.04] active:scale-[0.98] cursor-pointer"
+                   text-white font-medium flex items-center gap-2 z-50 transition-[bottom,transform,background-color] duration-300 ease-out hover:scale-[1.04] active:scale-[0.98] cursor-pointer"
       >
         <span>💬</span> Live Chat
       </button>
@@ -68,11 +112,19 @@ const ChatBox = ({ socket, roomId, username}) => {
   }
 
   return (
-    <div className="fixed bottom-6 right-6 w-80 h-[480px]
+    <div
+      style={{ bottom: `${bottomOffset}px`, width: `${size.width}px`, height: `${size.height}px` }}
+      className="fixed right-6
                     bg-[#1c1c1e]/75 backdrop-blur-2xl
                     border border-white/10
                     rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)]
-                    flex flex-col z-50">
+                    flex flex-col z-50 transition-[bottom] duration-300 ease-out"
+    >
+      <div
+        onMouseDown={handleResizeStart}
+        className="absolute -top-1 -left-1 w-4 h-4 cursor-nwse-resize rounded-full
+                   bg-white/10 hover:bg-[#7a8b5a]/60 border border-white/10 z-10 transition-colors"
+      />
 
       <div className="p-4 border-b border-white/5 text-white/90 font-semibold flex justify-between items-center text-sm">
         <span>🟢 Live Chat</span>
